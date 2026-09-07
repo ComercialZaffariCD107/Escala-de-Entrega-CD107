@@ -320,6 +320,15 @@ table.sheet td .cell.in-range{
   outline: 1px solid var(--orange-500);
   outline-offset:-1px;
 }
+table.sheet td .cell.copied-marching{
+  outline: 2px dashed var(--navy-600);
+  outline-offset:-2px;
+  animation: marching-ants-fade 1.4s steps(1) infinite;
+}
+@keyframes marching-ants-fade{
+  0%, 49%{ outline-color: var(--navy-600); }
+  50%, 100%{ outline-color: var(--orange-500); }
+}
 
 table.sheet tbody tr:nth-child(odd) td{ background: var(--paper); }
 table.sheet tbody tr:nth-child(even) td{ background: var(--paper-warm); }
