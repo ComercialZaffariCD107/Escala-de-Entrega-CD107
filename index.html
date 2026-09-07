@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Escala de Expedição · CD Nova Santa Rita</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css?v=1">
+</head>
+<body>
+
+<div id="app">
+
+  <!-- ===== TOPO ===== -->
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-mark">STOK<span>CENTER</span></div>
+      <div class="brand-sub">
+        <h1>Escala de Entrega</h1>
+        <p>CD Nova Santa Rita</p>
+      </div>
+    </div>
+
+    <div class="topbar-mid">
+      <label class="date-field">
+        <span>Data de entrega</span>
+        <input type="date" id="dataEntrega">
+      </label>
+      <div class="conn-status" id="connStatus">
+        <span class="dot"></span>
+        <span id="connLabel">conectando…</span>
+      </div>
+    </div>
+
+    <div class="frotas">
+      <div class="frota-col">
+        <div class="frota-row frota-head"><span>PRÓPRIA</span><span></span></div>
+        <div class="frota-row" data-key="RODOTREM"><span>Rodotrem</span><span class="frota-count">0</span></div>
+        <div class="frota-row" data-key="SIDER"><span>Sider</span><span class="frota-count">0</span></div>
+        <div class="frota-row" data-key="CARRETA"><span>Carreta</span><span class="frota-count">0</span></div>
+        <div class="frota-row" data-key="BITRUCK"><span>Bitruck</span><span class="frota-count">0</span></div>
+        <div class="frota-row" data-key="TRUCK"><span>Truck</span><span class="frota-count">0</span></div>
+        <div class="frota-row frota-total"><span>Total</span><span class="frota-count" id="totalPropria">0</span></div>
+      </div>
+      <div class="frota-col">
+        <div class="frota-row frota-head"><span>TERCEIRO</span><span></span></div>
+        <div class="frota-row" data-key="TRANSPIO"><span>Transpio</span><span class="frota-count">0</span></div>
+        <div class="frota-row" data-key="DARCHEL"><span>Darchel</span><span class="frota-count">0</span></div>
+        <div class="frota-row" data-key="TSG"><span>TSG</span><span class="frota-count">0</span></div>
+        <div class="frota-row" data-key="CATTO"><span>Catto</span><span class="frota-count">0</span></div>
+        <div class="frota-row" data-key="G10"><span>G10</span><span class="frota-count">0</span></div>
+        <div class="frota-row frota-total"><span>Total</span><span class="frota-count" id="totalTerceiro">0</span></div>
+      </div>
+    </div>
+  </header>
+
+  <!-- ===== TOOLBAR ===== -->
+  <div class="toolbar">
+    <div class="toolbar-left">
+      <button class="btn btn-primary" id="btnAddRow">+ Linha</button>
+      <button class="btn" id="btnAddGroup">+ Grupo PV</button>
+      <button class="btn btn-danger-outline" id="btnDeleteSelected" disabled>Excluir linha</button>
+    </div>
+    <div class="toolbar-right">
+      <input type="text" id="searchBox" placeholder="Buscar loja, master, carga…">
+      <span class="who-count" id="whoCount"></span>
+    </div>
+  </div>
+
+  <!-- ===== TABELA ===== -->
+  <div class="sheet-wrap">
+    <table class="sheet" id="sheetTable">
+      <thead>
+        <tr>
+          <th class="colcheck"></th>
+          <th class="col-loja">LOJA</th>
+          <th class="col-pav">PAV</th>
+          <th class="col-lojas">LOJAS</th>
+          <th class="col-tipo">TIPO DE CARGA</th>
+          <th class="col-qtd">QTD PALLET</th>
+          <th class="col-doca">DOCA</th>
+          <th class="col-peso">PESO</th>
+          <th class="col-obs">OBSERVAÇÃO</th>
+          <th class="col-master">MASTER</th>
+          <th class="col-cargas">CARGAS INFORMADAS</th>
+          <th class="col-status">STATUS</th>
+          <th class="col-liberacao">LIBERAÇÃO NA PORTARIA</th>
+          <th class="col-veiculo">TIPO DE VEÍCULO</th>
+          <th class="col-frota">FROTA</th>
+          <th class="col-placa">PLACA CAVALO</th>
+        </tr>
+      </thead>
+      <tbody id="sheetBody">
+        <!-- gerado via script.js -->
+      </tbody>
+    </table>
+  </div>
+
+  <footer class="footbar">
+    <span id="saveIndicator">Tudo salvo</span>
+    <span class="footbar-sep">·</span>
+    <span>Edição colaborativa em tempo real</span>
+  </footer>
+
+</div>
+
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="firebase-config.js?v=1"></script>
+<script src="script.js?v=1"></script>
+</body>
+</html>
