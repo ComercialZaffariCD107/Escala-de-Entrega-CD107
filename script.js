@@ -1,21 +1,18 @@
 // ============================================================
 // Escala de Entrega — CD Nova Santa Rita
-// Planilha colaborativa em tempo real (Firestore)
+// Planilha colaborativa (Firestore) com fallback em modo local
+// (localStorage) enquanto o Firebase não estiver configurado.
 // ============================================================
-
-const COLS = [
-  "loja","pav","lojaNome","tipoCarga","qtdPallet","doca","peso",
-  "observacao","master","cargasInformadas","status","liberacao",
-  "tipoVeiculo","frota","placaCavalo"
-];
 
 const OBSERVACAO_OPTS = ["", "PICKING", "AGRUPADA", "SORTER", "PALETE BOX"];
 const STATUS_OPTS = ["", "PENDENTE", "OK"];
 const TIPO_VEICULO_OPTS = ["", "RODOTREM", "SIDER", "CARRETA", "BITRUCK", "TRUCK"];
 const FROTA_OPTS = ["", "TRANSPIO", "DARCHEL", "TSG", "CATTO", "G10"];
+const LOCAL_KEY = "escala_expedicao_local_v1";
 
-let rowsCache = [];      // última snapshot conhecida, ordenada
-let focusedKey = null;   // "<docId>:<campo>" em edição no momento
+let rowsCache = [];
+let metaCache = { data: "" };
+let focusedKey = null;
 let selectedIds = new Set();
 
 const sheetBody = document.getElementById("sheetBody");
@@ -26,12 +23,9 @@ const searchBox = document.getElementById("searchBox");
 const btnDeleteSelected = document.getElementById("btnDeleteSelected");
 
 // ------------------------------------------------------------
-// SEED — dados iniciais do PV 1 (só roda se a coleção estiver vazia)
+// DADOS INICIAIS (PV 1) — usados no seed do Firestore e no modo local
 // ------------------------------------------------------------
-async function seedIfEmpty(){
-  const snap = await db.collection(COLLECTION_LINHAS).limit(1).get();
-  if(!snap.empty) return;
-
+function dadosIniciais(){
   const linha = (loja,qtd,doca,peso,obs,cargas) => ({
     loja: String(loja), pav:"PV1", lojaNome:`Loja ${String(loja).padStart(2,"0")} - Passo Fundo`,
     tipoCarga:"MERCEARIA", qtdPallet: qtd||"", doca: doca||"", peso: peso||"",
@@ -39,7 +33,7 @@ async function seedIfEmpty(){
     status:"", liberacao:"", tipoVeiculo:"", frota:"", placaCavalo:""
   });
 
-  const dados = [
+  return [
     {isGroup:true, groupLabel:"CARGAS DO PV 1"},
     linha(1,"","",1544,"AGRUPADA","AGRUPADA"),
     linha(1,"","",1103,"SORTER","SORTER"),
@@ -61,41 +55,157 @@ async function seedIfEmpty(){
     linha(8,"","",604,"SORTER","SORTER"),
     linha(9,1,57,100,"PICKING","1600381"),
     linha(9,1,57,92,"PICKING","1598145"),
-  ];
-
-  const batch = db.batch();
-  dados.forEach((d, i) => {
-    const ref = db.collection(COLLECTION_LINHAS).doc();
-    batch.set(ref, {...d, ordem: i});
-  });
-  batch.set(db.doc(DOC_META), { data: "2026-07-01" }, {merge:true});
-  await batch.commit();
+  ].map((d,i)=>({...d, ordem:i}));
 }
 
-// ------------------------------------------------------------
+// ============================================================
+// CAMADA DE DADOS — Firestore (colaborativo) ou local (fallback)
+// ============================================================
+let onRowsChanged = () => {};
+let onMetaChanged = () => {};
+
+function uid(){ return "l" + Date.now().toString(36) + Math.random().toString(36).slice(2,8); }
+
+// ---------- MODO LOCAL (localStorage, sem Firebase) ----------
+function localLoad(){
+  try{
+    const raw = localStorage.getItem(LOCAL_KEY);
+    if(raw) return JSON.parse(raw);
+  }catch(e){ console.error(e); }
+  return null;
+}
+function localSave(state){
+  localStorage.setItem(LOCAL_KEY, JSON.stringify(state));
+}
+function localState(){
+  let s = localLoad();
+  if(!s){
+    s = { rows: dadosIniciais().map(r=>({...r, id: uid()})), meta: { data: "2026-07-01" } };
+    localSave(s);
+  }
+  return s;
+}
+
+const localBackend = {
+  init(){
+    const s = localState();
+    rowsCache = s.rows;
+    metaCache = s.meta;
+    onRowsChanged(rowsCache);
+    onMetaChanged(metaCache);
+    connStatus.className = "conn-status online";
+    connLabel.textContent = "modo local · salvo neste navegador";
+  },
+  addRow(){
+    const s = localState();
+    const maxOrdem = s.rows.reduce((m,r)=>Math.max(m, r.ordem||0), 0);
+    s.rows.push({
+      id: uid(), loja:"", pav:"", lojaNome:"", tipoCarga:"", qtdPallet:"", doca:"", peso:"",
+      observacao:"", master:"", cargasInformadas:"", status:"", liberacao:"",
+      tipoVeiculo:"", frota:"", placaCavalo:"", ordem: maxOrdem + 1
+    });
+    localSave(s); rowsCache = s.rows; onRowsChanged(rowsCache);
+  },
+  addGroup(){
+    const s = localState();
+    const maxOrdem = s.rows.reduce((m,r)=>Math.max(m, r.ordem||0), 0);
+    s.rows.push({ id: uid(), isGroup:true, groupLabel:"NOVO GRUPO", ordem: maxOrdem + 1 });
+    localSave(s); rowsCache = s.rows; onRowsChanged(rowsCache);
+  },
+  commitField(id, field, value){
+    const s = localState();
+    const row = s.rows.find(r=>r.id===id);
+    if(row){ row[field] = value; localSave(s); rowsCache = s.rows; }
+    saveIndicator.textContent = "Tudo salvo";
+    saveIndicator.className = "";
+  },
+  deleteRows(ids){
+    const s = localState();
+    s.rows = s.rows.filter(r=> !ids.has(r.id));
+    localSave(s); rowsCache = s.rows; onRowsChanged(rowsCache);
+  },
+  setMetaDate(dateStr){
+    const s = localState();
+    s.meta.data = dateStr; localSave(s); metaCache = s.meta;
+  }
+};
+
+// ---------- MODO FIRESTORE (colaborativo em tempo real) ----------
+const firestoreBackend = {
+  async init(){
+    try{
+      const snap = await db.collection(COLLECTION_LINHAS).limit(1).get();
+      if(snap.empty){
+        const batch = db.batch();
+        dadosIniciais().forEach(d=>{
+          const ref = db.collection(COLLECTION_LINHAS).doc();
+          batch.set(ref, d);
+        });
+        batch.set(db.doc(DOC_META), { data: "2026-07-01" }, {merge:true});
+        await batch.commit();
+      }
+    }catch(e){ console.error("Erro ao semear dados:", e); }
+
+    db.collection(COLLECTION_LINHAS).orderBy("ordem").onSnapshot(snap=>{
+      rowsCache = snap.docs.map(d=>({id:d.id, ...d.data()}));
+      onRowsChanged(rowsCache);
+      const online = !snap.metadata.fromCache;
+      connStatus.className = "conn-status " + (online ? "online" : "offline");
+      connLabel.textContent = online ? "sincronizado" : "sem conexão · salvando localmente";
+    }, err=>{
+      console.error("Erro no listener:", err);
+      connStatus.className = "conn-status offline";
+      connLabel.textContent = "erro de conexão";
+    });
+
+    db.doc(DOC_META).onSnapshot(snap=>{
+      const data = snap.data();
+      if(data){ metaCache = data; onMetaChanged(metaCache); }
+    });
+  },
+  addRow(){
+    const maxOrdem = rowsCache.reduce((m,r)=>Math.max(m, r.ordem||0), 0);
+    db.collection(COLLECTION_LINHAS).add({
+      loja:"", pav:"", lojaNome:"", tipoCarga:"", qtdPallet:"", doca:"", peso:"",
+      observacao:"", master:"", cargasInformadas:"", status:"", liberacao:"",
+      tipoVeiculo:"", frota:"", placaCavalo:"", ordem: maxOrdem + 1
+    });
+  },
+  addGroup(){
+    const maxOrdem = rowsCache.reduce((m,r)=>Math.max(m, r.ordem||0), 0);
+    db.collection(COLLECTION_LINHAS).add({ isGroup:true, groupLabel:"NOVO GRUPO", ordem: maxOrdem + 1 });
+  },
+  commitField(id, field, value){
+    saveIndicator.textContent = "Salvando…";
+    saveIndicator.className = "saving";
+    db.collection(COLLECTION_LINHAS).doc(id).update({[field]: value})
+      .then(()=>{ saveIndicator.textContent = "Tudo salvo"; saveIndicator.className = ""; })
+      .catch(err=>{
+        console.error("Erro ao salvar:", err);
+        saveIndicator.textContent = "Erro ao salvar";
+        saveIndicator.className = "error";
+      });
+  },
+  deleteRows(ids){
+    const batch = db.batch();
+    ids.forEach(id=> batch.delete(db.collection(COLLECTION_LINHAS).doc(id)));
+    return batch.commit();
+  },
+  setMetaDate(dateStr){
+    db.doc(DOC_META).set({data: dateStr}, {merge:true});
+  }
+};
+
+const backend = isFirebaseConfigured ? firestoreBackend : localBackend;
+
+// ============================================================
 // RENDER
-// ------------------------------------------------------------
+// ============================================================
 function fmtPeso(v){
   if(v === "" || v === undefined || v === null) return "";
   const n = Number(v);
   if(Number.isNaN(n)) return v;
   return n.toLocaleString("pt-BR");
-}
-
-function tagClass(field, value){
-  if(!value) return "";
-  const v = value.toUpperCase();
-  if(field==="observacao"){
-    if(v==="PICKING") return "tag tag-picking";
-    if(v==="AGRUPADA") return "tag tag-agrupada";
-    if(v==="SORTER") return "tag tag-sorter";
-    if(v==="PALETE BOX") return "tag tag-palete";
-  }
-  if(field==="status"){
-    if(v==="OK") return "tag tag-ok";
-    if(v==="PENDENTE") return "tag tag-pendente";
-  }
-  return "";
 }
 
 function buildSelect(id, field, value, opts){
@@ -109,7 +219,7 @@ function buildSelect(id, field, value, opts){
     if(o === (value||"")) op.selected = true;
     sel.appendChild(op);
   });
-  sel.addEventListener("change", ()=> commitField(id, field, sel.value));
+  sel.addEventListener("change", ()=> backend.commitField(id, field, sel.value));
   sel.addEventListener("focus", ()=> focusedKey = id+":"+field);
   sel.addEventListener("blur", ()=> focusedKey = null);
   return sel;
@@ -125,7 +235,7 @@ function buildEditable(id, field, value, opts={}){
   div.addEventListener("focus", ()=> focusedKey = id+":"+field);
   div.addEventListener("blur", ()=>{
     focusedKey = null;
-    commitField(id, field, div.textContent.trim());
+    backend.commitField(id, field, div.textContent.trim());
   });
   div.addEventListener("keydown", (e)=>{
     if(e.key === "Enter"){ e.preventDefault(); div.blur(); }
@@ -143,8 +253,7 @@ function render(){
       tr.className = "group-row";
       const td = document.createElement("td");
       td.colSpan = 16;
-      const div = buildEditable(row.id, "groupLabel", row.groupLabel);
-      td.appendChild(div);
+      td.appendChild(buildEditable(row.id, "groupLabel", row.groupLabel));
       tr.appendChild(td);
       sheetBody.appendChild(tr);
       return;
@@ -171,31 +280,28 @@ function render(){
     tdCheck.appendChild(chk);
     tr.appendChild(tdCheck);
 
-    const addCell = (field, el, extraClass="") => {
+    const addCell = (el, extraClass="") => {
       const td = document.createElement("td");
       if(extraClass) td.className = extraClass;
       td.appendChild(el);
       tr.appendChild(td);
     };
 
-    addCell("loja", buildEditable(row.id,"loja",row.loja), "num");
-    addCell("pav", buildEditable(row.id,"pav",row.pav));
-    addCell("lojaNome", buildEditable(row.id,"lojaNome",row.lojaNome));
-    addCell("tipoCarga", buildEditable(row.id,"tipoCarga",row.tipoCarga));
-    addCell("qtdPallet", buildEditable(row.id,"qtdPallet",row.qtdPallet), "num");
-    addCell("doca", buildEditable(row.id,"doca",row.doca), "num");
-    addCell("peso", buildEditable(row.id,"peso",row.peso,{format:fmtPeso}), "num");
-
-    const obsWrap = document.createElement("div");
-    addCell("observacao", buildSelect(row.id,"observacao",row.observacao,OBSERVACAO_OPTS));
-
-    addCell("master", buildEditable(row.id,"master",row.master));
-    addCell("cargasInformadas", buildEditable(row.id,"cargasInformadas",row.cargasInformadas));
-    addCell("status", buildSelect(row.id,"status",row.status,STATUS_OPTS));
-    addCell("liberacao", buildEditable(row.id,"liberacao",row.liberacao));
-    addCell("tipoVeiculo", buildSelect(row.id,"tipoVeiculo",row.tipoVeiculo,TIPO_VEICULO_OPTS));
-    addCell("frota", buildSelect(row.id,"frota",row.frota,FROTA_OPTS));
-    addCell("placaCavalo", buildEditable(row.id,"placaCavalo",row.placaCavalo));
+    addCell(buildEditable(row.id,"loja",row.loja), "num");
+    addCell(buildEditable(row.id,"pav",row.pav));
+    addCell(buildEditable(row.id,"lojaNome",row.lojaNome));
+    addCell(buildEditable(row.id,"tipoCarga",row.tipoCarga));
+    addCell(buildEditable(row.id,"qtdPallet",row.qtdPallet), "num");
+    addCell(buildEditable(row.id,"doca",row.doca), "num");
+    addCell(buildEditable(row.id,"peso",row.peso,{format:fmtPeso}), "num");
+    addCell(buildSelect(row.id,"observacao",row.observacao,OBSERVACAO_OPTS));
+    addCell(buildEditable(row.id,"master",row.master));
+    addCell(buildEditable(row.id,"cargasInformadas",row.cargasInformadas));
+    addCell(buildSelect(row.id,"status",row.status,STATUS_OPTS));
+    addCell(buildEditable(row.id,"liberacao",row.liberacao));
+    addCell(buildSelect(row.id,"tipoVeiculo",row.tipoVeiculo,TIPO_VEICULO_OPTS));
+    addCell(buildSelect(row.id,"frota",row.frota,FROTA_OPTS));
+    addCell(buildEditable(row.id,"placaCavalo",row.placaCavalo));
 
     sheetBody.appendChild(tr);
   });
@@ -235,94 +341,25 @@ function updateCounters(){
   document.getElementById("totalTerceiro").textContent = totalT;
 }
 
-// ------------------------------------------------------------
-// FIRESTORE — leitura em tempo real + escrita
-// ------------------------------------------------------------
-function attachRealtimeListener(){
-  db.collection(COLLECTION_LINHAS).orderBy("ordem").onSnapshot(snap=>{
-    rowsCache = snap.docs.map(d=>({id:d.id, ...d.data()}));
-    render();
+// ============================================================
+// INIT
+// ============================================================
+onRowsChanged = (rows) => { rowsCache = rows; render(); };
+onMetaChanged = (meta) => {
+  const input = document.getElementById("dataEntrega");
+  if(meta && meta.data && document.activeElement !== input) input.value = meta.data;
+};
 
-    const online = !snap.metadata.fromCache;
-    connStatus.className = "conn-status " + (online ? "online" : "offline");
-    connLabel.textContent = online ? "sincronizado" : "sem conexão · salvando localmente";
-  }, err=>{
-    console.error("Erro no listener:", err);
-    connStatus.className = "conn-status offline";
-    connLabel.textContent = "erro de conexão";
-  });
-
-  db.doc(DOC_META).onSnapshot(snap=>{
-    const data = snap.data();
-    if(data && data.data){
-      const input = document.getElementById("dataEntrega");
-      if(document.activeElement !== input) input.value = data.data;
-    }
-  });
-}
-
-let saveTimeout = null;
-function commitField(id, field, value){
-  saveIndicator.textContent = "Salvando…";
-  saveIndicator.className = "saving";
-
-  const ref = db.collection(COLLECTION_LINHAS).doc(id);
-  ref.update({[field]: value})
-    .then(()=>{
-      saveIndicator.textContent = "Tudo salvo";
-      saveIndicator.className = "";
-    })
-    .catch(err=>{
-      console.error("Erro ao salvar:", err);
-      saveIndicator.textContent = "Erro ao salvar";
-      saveIndicator.className = "error";
-    });
-}
-
-function addRow(){
-  const maxOrdem = rowsCache.reduce((m,r)=>Math.max(m, r.ordem||0), 0);
-  db.collection(COLLECTION_LINHAS).add({
-    loja:"", pav:"", lojaNome:"", tipoCarga:"", qtdPallet:"", doca:"", peso:"",
-    observacao:"", master:"", cargasInformadas:"", status:"", liberacao:"",
-    tipoVeiculo:"", frota:"", placaCavalo:"", ordem: maxOrdem + 1
-  });
-}
-
-function addGroup(){
-  const maxOrdem = rowsCache.reduce((m,r)=>Math.max(m, r.ordem||0), 0);
-  db.collection(COLLECTION_LINHAS).add({
-    isGroup:true, groupLabel:"NOVO GRUPO", ordem: maxOrdem + 1
-  });
-}
-
-function deleteSelected(){
+document.getElementById("btnAddRow").addEventListener("click", ()=> backend.addRow());
+document.getElementById("btnAddGroup").addEventListener("click", ()=> backend.addGroup());
+document.getElementById("btnDeleteSelected").addEventListener("click", ()=>{
   if(selectedIds.size === 0) return;
   if(!confirm(`Excluir ${selectedIds.size} linha(s) selecionada(s)?`)) return;
-  const batch = db.batch();
-  selectedIds.forEach(id=> batch.delete(db.collection(COLLECTION_LINHAS).doc(id)));
-  batch.commit().then(()=>{
-    selectedIds.clear();
-    btnDeleteSelected.disabled = true;
-  });
-}
-
-// ------------------------------------------------------------
-// INIT
-// ------------------------------------------------------------
-document.getElementById("btnAddRow").addEventListener("click", addRow);
-document.getElementById("btnAddGroup").addEventListener("click", addGroup);
-document.getElementById("btnDeleteSelected").addEventListener("click", deleteSelected);
-searchBox.addEventListener("input", render);
-
-document.getElementById("dataEntrega").addEventListener("change", (e)=>{
-  db.doc(DOC_META).set({data: e.target.value}, {merge:true});
+  backend.deleteRows(selectedIds);
+  selectedIds.clear();
+  btnDeleteSelected.disabled = true;
 });
+searchBox.addEventListener("input", render);
+document.getElementById("dataEntrega").addEventListener("change", (e)=> backend.setMetaDate(e.target.value));
 
-(async function init(){
-  try{
-    await seedIfEmpty();
-  }catch(e){
-    console.error("Erro ao semear dados iniciais:", e);
-  }
-  attachRealtimeListener();
-})();
+backend.init();

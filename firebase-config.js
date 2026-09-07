@@ -7,6 +7,11 @@
 // projeto exclusivo para a Escala de Expedição).
 //
 // Console > Configurações do projeto > Seus apps > SDK setup
+//
+// Enquanto isto NÃO for preenchido, o app funciona sozinho em
+// "modo local" (salva no navegador, sem sincronizar entre pessoas).
+// Assim que você colar as chaves reais aqui, ele muda automaticamente
+// para o modo colaborativo em tempo real.
 // ============================================================
 
 const firebaseConfig = {
@@ -18,11 +23,16 @@ const firebaseConfig = {
   appId: "1:000000000000:web:xxxxxxxxxxxxxxxxxxxxxx"
 };
 
-firebase.initializeApp(firebaseConfig);
-const db = firebase.firestore();
-
 // Nome da coleção usada por esta escala. Se você reaproveitar um
 // projeto Firebase já existente, troque este nome para não colidir
 // com as coleções de outras ferramentas (ex: "escala_expedicao_pv1").
 const COLLECTION_LINHAS = "escala_expedicao_linhas";
 const DOC_META = "escala_expedicao_meta/config";
+
+const isFirebaseConfigured = firebaseConfig.apiKey !== "COLE_AQUI_SUA_API_KEY";
+
+let db = null;
+if (isFirebaseConfigured) {
+  firebase.initializeApp(firebaseConfig);
+  db = firebase.firestore();
+}
