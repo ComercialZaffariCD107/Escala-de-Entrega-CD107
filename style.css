@@ -315,6 +315,11 @@ table.sheet td .cell[data-editing="1"]{
   background: var(--navy-50);
   cursor:text;
 }
+table.sheet td .cell.in-range{
+  background: rgba(217,138,31,0.14) !important;
+  outline: 1px solid var(--orange-500);
+  outline-offset:-1px;
+}
 
 table.sheet tbody tr:nth-child(odd) td{ background: var(--paper); }
 table.sheet tbody tr:nth-child(even) td{ background: var(--paper-warm); }

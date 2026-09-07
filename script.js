@@ -2,7 +2,8 @@
 // Escala de Entrega — CD Nova Santa Rita
 // Planilha colaborativa (Firestore) com fallback em modo local
 // (localStorage) enquanto o Firebase não estiver configurado.
-// Navegação por teclado no estilo Excel + filtros no cabeçalho.
+// Navegação, seleção de intervalo, copiar/colar e edição no
+// estilo Excel.
 // ============================================================
 
 const COLS_ORDER = [
@@ -20,10 +21,13 @@ const LOCAL_KEY = "escala_expedicao_local_v1";
 
 let rowsCache = [];
 let metaCache = { data: "" };
-let focusedKey = null;      // "<rowId>:<field>" — usado p/ manter foco após re-render
-let selectedIds = new Set();
-let visibleRowIds = [];     // ids das linhas de dados visíveis, na ordem renderizada
-let columnFilters = {};     // { field: valorEscolhido }
+let focusedKey = null;
+let selectedIds = new Set();      // linhas marcadas p/ excluir (checkbox)
+let visibleRowIds = [];           // ids das linhas de dados visíveis, na ordem renderizada
+let columnFilters = {};           // { field: valor ou EMPTY_MARKER }
+let selRangeAnchor = null;        // {rowpos, colpos}
+let selRangeActive = null;        // {rowpos, colpos}
+let internalClipboard = "";
 
 const sheetBody = document.getElementById("sheetBody");
 const filterRow = document.getElementById("filterRow");
@@ -196,69 +200,159 @@ const firestoreBackend = {
 const backend = isFirebaseConfigured ? firestoreBackend : localBackend;
 
 // ============================================================
-// NAVEGAÇÃO ESTILO EXCEL
+// SELEÇÃO DE CÉLULA / INTERVALO (estilo Excel)
 // ============================================================
+function setSingleSelection(rowpos, colpos){
+  selRangeAnchor = {rowpos, colpos};
+  selRangeActive = {rowpos, colpos};
+  updateRangeHighlight();
+}
+function extendSelection(rowpos, colpos){
+  if(!selRangeAnchor) selRangeAnchor = {rowpos, colpos};
+  selRangeActive = {rowpos, colpos};
+  updateRangeHighlight();
+}
+function getRangeBounds(){
+  if(!selRangeAnchor || !selRangeActive) return null;
+  return {
+    r0: Math.min(selRangeAnchor.rowpos, selRangeActive.rowpos),
+    r1: Math.max(selRangeAnchor.rowpos, selRangeActive.rowpos),
+    c0: Math.min(selRangeAnchor.colpos, selRangeActive.colpos),
+    c1: Math.max(selRangeAnchor.colpos, selRangeActive.colpos),
+  };
+}
+function updateRangeHighlight(){
+  const b = getRangeBounds();
+  const multi = b && (b.r0!==b.r1 || b.c0!==b.c1);
+  sheetBody.querySelectorAll(".cell[data-rowpos]").forEach(el=>{
+    const r = parseInt(el.dataset.rowpos,10), c = parseInt(el.dataset.colpos,10);
+    const inRange = multi && r>=b.r0 && r<=b.r1 && c>=b.c0 && c<=b.c1;
+    el.classList.toggle("in-range", inRange);
+  });
+}
+
 function focusGridCell(rowpos, colpos){
   if(rowpos < 0 || rowpos >= visibleRowIds.length) return false;
   if(colpos < 0 || colpos >= COLS_ORDER.length) return false;
   const el = sheetBody.querySelector(`[data-rowpos="${rowpos}"][data-colpos="${colpos}"]`);
-  if(el){ el.focus({preventScroll:true}); return true; }
+  if(el){ setSingleSelection(rowpos, colpos); el.focus({preventScroll:true}); return true; }
+  return false;
+}
+function focusGridCellExtend(rowpos, colpos){
+  if(rowpos < 0 || rowpos >= visibleRowIds.length) return false;
+  if(colpos < 0 || colpos >= COLS_ORDER.length) return false;
+  const el = sheetBody.querySelector(`[data-rowpos="${rowpos}"][data-colpos="${colpos}"]`);
+  if(el){ extendSelection(rowpos, colpos); el.focus({preventScroll:true}); return true; }
   return false;
 }
 
-function attachGridNav(el){
-  el.addEventListener("keydown", (e)=>{
-    const editing = el.dataset.editing === "1";
-    const rp = parseInt(el.dataset.rowpos, 10);
-    const cp = parseInt(el.dataset.colpos, 10);
-
-    if(!editing && ["ArrowUp","ArrowDown","ArrowLeft","ArrowRight"].includes(e.key)){
-      e.preventDefault();
-      if(e.key === "ArrowUp") focusGridCell(rp-1, cp);
-      else if(e.key === "ArrowDown") focusGridCell(rp+1, cp);
-      else if(e.key === "ArrowLeft") focusGridCell(rp, cp-1);
-      else if(e.key === "ArrowRight") focusGridCell(rp, cp+1);
-      return;
-    }
-
-    if(el.tagName === "SELECT") return; // demais teclas: comportamento nativo do dropdown
-
-    if(e.key === "Enter"){
-      e.preventDefault();
-      if(!editing){
-        el.dataset.editing = "1";
-        el.contentEditable = "true";
-        el.focus();
-        document.execCommand && placeCaretAtEnd(el);
-      } else {
-        el.dataset.editing = "0";
-        el.contentEditable = "false";
-        backend.commitField(el.dataset.id, el.dataset.field, el.textContent.trim());
-        focusGridCell(rp+1, cp);
-      }
-      return;
-    }
-
-    if(e.key === "Escape" && editing){
-      e.preventDefault();
-      el.dataset.editing = "0";
-      el.contentEditable = "false";
-      el.textContent = el.dataset.original ?? "";
-      el.blur();
-    }
-  });
-
-  el.addEventListener("blur", ()=>{
-    focusedKey = null;
-    if(el.dataset.editing === "1"){
-      el.dataset.editing = "0";
-      el.contentEditable = "false";
-      backend.commitField(el.dataset.id, el.dataset.field, el.textContent.trim());
-    }
-  });
-  el.addEventListener("focus", ()=> focusedKey = el.dataset.id+":"+el.dataset.field);
+// ============================================================
+// COPIAR / RECORTAR / COLAR
+// ============================================================
+function fieldOptions(field){
+  if(field==="observacao") return OBSERVACAO_OPTS;
+  if(field==="status") return STATUS_OPTS;
+  if(field==="tipoVeiculo") return TIPO_VEICULO_OPTS;
+  if(field==="frota") return FROTA_OPTS;
+  return null;
 }
 
+function cellDisplayValue(rowId, field){
+  const row = rowsCache.find(r=>r.id===rowId);
+  if(!row) return "";
+  let v = row[field] ?? "";
+  if(field === "peso") v = fmtPeso(v);
+  return String(v);
+}
+
+function setCellValue(rowId, field, rawValue){
+  let value;
+  const opts = fieldOptions(field);
+  if(opts){
+    const upper = String(rawValue).trim().toUpperCase();
+    const match = opts.find(o=>o && o.toUpperCase()===upper);
+    value = match || "";
+  } else if(field === "peso"){
+    const cleaned = String(rawValue).trim().replace(/\./g,"").replace(",", ".");
+    value = (cleaned !== "" && !isNaN(cleaned)) ? Number(cleaned) : String(rawValue).trim();
+  } else {
+    value = String(rawValue).trim();
+  }
+  backend.commitField(rowId, field, value);
+}
+
+function copyRange(cut){
+  const b = getRangeBounds();
+  if(!b) return;
+  const lines = [];
+  for(let r=b.r0; r<=b.r1; r++){
+    const rowId = visibleRowIds[r];
+    if(!rowId) continue;
+    const cols = [];
+    for(let c=b.c0; c<=b.c1; c++) cols.push(cellDisplayValue(rowId, COLS_ORDER[c]));
+    lines.push(cols.join("\t"));
+  }
+  const text = lines.join("\n");
+  internalClipboard = text;
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(text).catch(()=>{});
+  }
+  if(cut){
+    for(let r=b.r0;r<=b.r1;r++){
+      const rowId = visibleRowIds[r];
+      if(!rowId) continue;
+      for(let c=b.c0;c<=b.c1;c++) setCellValue(rowId, COLS_ORDER[c], "");
+    }
+  }
+}
+
+function clearRange(){
+  const b = getRangeBounds();
+  if(!b) return;
+  for(let r=b.r0;r<=b.r1;r++){
+    const rowId = visibleRowIds[r];
+    if(!rowId) continue;
+    for(let c=b.c0;c<=b.c1;c++) setCellValue(rowId, COLS_ORDER[c], "");
+  }
+}
+
+async function pasteRange(){
+  const b = getRangeBounds();
+  if(!b) return;
+  let text = internalClipboard;
+  try{
+    if(navigator.clipboard && navigator.clipboard.readText){
+      const t = await navigator.clipboard.readText();
+      if(t) text = t;
+    }
+  }catch(e){ /* sem permissão do navegador — usa o que foi copiado dentro da planilha */ }
+  if(!text) return;
+
+  const srcLines = text.replace(/\r/g,"").split("\n");
+  while(srcLines.length > 1 && srcLines[srcLines.length-1] === "") srcLines.pop();
+  const srcRows = srcLines.map(l=>l.split("\t"));
+  const srcH = srcRows.length, srcW = Math.max(...srcRows.map(r=>r.length));
+
+  const destH = (b.r1-b.r0+1), destW = (b.c1-b.c0+1);
+  const fillH = (srcH===1 && srcW===1) ? destH : srcH;
+  const fillW = (srcH===1 && srcW===1) ? destW : srcW;
+
+  for(let i=0;i<fillH;i++){
+    const r = b.r0+i;
+    const rowId = visibleRowIds[r];
+    if(!rowId) continue;
+    for(let j=0;j<fillW;j++){
+      const c = b.c0+j;
+      if(c >= COLS_ORDER.length) continue;
+      const val = srcRows[i % srcH][j % srcW] ?? "";
+      setCellValue(rowId, COLS_ORDER[c], val);
+    }
+  }
+}
+
+// ============================================================
+// EDIÇÃO DE CÉLULA (Enter / duplo clique / Tab / Esc)
+// ============================================================
 function placeCaretAtEnd(el){
   const range = document.createRange();
   range.selectNodeContents(el);
@@ -267,6 +361,102 @@ function placeCaretAtEnd(el){
   sel.removeAllRanges();
   sel.addRange(range);
 }
+
+function enterEdit(el){
+  el.dataset.editing = "1";
+  el.contentEditable = "true";
+  el.focus();
+  placeCaretAtEnd(el);
+}
+function exitEdit(el, commit){
+  el.dataset.editing = "0";
+  el.contentEditable = "false";
+  if(commit) backend.commitField(el.dataset.id, el.dataset.field, el.textContent.trim());
+  else el.textContent = el.dataset.original ?? "";
+}
+
+function attachGridNav(el){
+  el.addEventListener("mousedown", (e)=>{
+    const rp = parseInt(el.dataset.rowpos,10), cp = parseInt(el.dataset.colpos,10);
+    if(e.shiftKey) extendSelection(rp, cp); else setSingleSelection(rp, cp);
+  });
+
+  if(el.tagName === "DIV"){
+    el.addEventListener("dblclick", ()=>{ if(el.dataset.editing !== "1") enterEdit(el); });
+  }
+
+  el.addEventListener("keydown", (e)=>{
+    const editing = el.dataset.editing === "1";
+    const rp = parseInt(el.dataset.rowpos, 10);
+    const cp = parseInt(el.dataset.colpos, 10);
+    const isArrow = ["ArrowUp","ArrowDown","ArrowLeft","ArrowRight"].includes(e.key);
+
+    if(!editing && isArrow){
+      e.preventDefault();
+      const moves = { ArrowUp:[-1,0], ArrowDown:[1,0], ArrowLeft:[0,-1], ArrowRight:[0,1] };
+      const [dr, dc] = moves[e.key];
+      if(e.shiftKey) focusGridCellExtend(rp+dr, cp+dc);
+      else focusGridCell(rp+dr, cp+dc);
+      return;
+    }
+
+    if(el.tagName === "SELECT") return; // demais teclas: comportamento nativo do dropdown
+
+    if(!editing && e.key === "Tab"){
+      e.preventDefault();
+      if(e.shiftKey) focusGridCell(rp, cp-1); else focusGridCell(rp, cp+1);
+      return;
+    }
+    if(editing && e.key === "Tab"){
+      e.preventDefault();
+      exitEdit(el, true);
+      if(e.shiftKey) focusGridCell(rp, cp-1); else focusGridCell(rp, cp+1);
+      return;
+    }
+
+    if(!editing && (e.key === "Delete" || e.key === "Backspace")){
+      e.preventDefault();
+      clearRange();
+      return;
+    }
+
+    if(e.key === "Enter"){
+      e.preventDefault();
+      if(!editing) enterEdit(el);
+      else { exitEdit(el, true); focusGridCell(rp+1, cp); }
+      return;
+    }
+
+    if(e.key === "Escape" && editing){
+      e.preventDefault();
+      exitEdit(el, false);
+      el.blur();
+    }
+  });
+
+  el.addEventListener("blur", ()=>{
+    focusedKey = null;
+    if(el.dataset.editing === "1") exitEdit(el, true);
+  });
+  el.addEventListener("focus", ()=> focusedKey = el.dataset.id+":"+el.dataset.field);
+}
+
+// Copiar / recortar / colar — nível de documento (ignora quando o
+// usuário está de fato digitando dentro de uma célula, pra não
+// atrapalhar o copiar/colar nativo de texto parcial).
+document.addEventListener("keydown", (e)=>{
+  const el = document.activeElement;
+  const isGridCell = el && el.classList && el.classList.contains("cell") && el.dataset.rowpos !== undefined;
+  if(!isGridCell) return;
+  const isTextEditing = el.dataset.editing === "1";
+  const ctrl = e.ctrlKey || e.metaKey;
+  if(!ctrl || isTextEditing) return;
+
+  const k = e.key.toLowerCase();
+  if(k === "c"){ e.preventDefault(); copyRange(false); }
+  else if(k === "x"){ e.preventDefault(); copyRange(true); }
+  else if(k === "v"){ e.preventDefault(); pasteRange(); }
+});
 
 // ============================================================
 // RENDER
@@ -338,11 +528,8 @@ function render(){
       const wanted = columnFilters[f];
       if(!wanted) continue;
       const cellVal = String(row[f] ?? "").trim();
-      if(wanted === EMPTY_MARKER){
-        if(cellVal !== "") return;
-      } else if(cellVal !== wanted){
-        return;
-      }
+      if(wanted === EMPTY_MARKER){ if(cellVal !== "") return; }
+      else if(cellVal !== wanted){ return; }
     }
 
     const rowpos = visibleRowIds.length;
@@ -381,6 +568,7 @@ function render(){
 
   restoreFocus();
   updateCounters();
+  updateRangeHighlight();
 }
 
 function restoreFocus(){
@@ -418,14 +606,14 @@ function updateCounters(){
 // ============================================================
 function buildFilterRow(){
   filterRow.innerHTML = "";
-  const thCheck = document.createElement("th");
-  filterRow.appendChild(thCheck);
+  filterRow.appendChild(document.createElement("th"));
 
   COLS_ORDER.forEach(field=>{
     const th = document.createElement("th");
     const uniques = [...new Set(rowsCache.filter(r=>!r.isGroup).map(r=> String(r[field] ?? "")).filter(v=>v!==""))].sort();
     const sel = document.createElement("select");
     sel.className = "col-filter";
+
     const optAll = document.createElement("option");
     optAll.value = ""; optAll.textContent = "Todos";
     sel.appendChild(optAll);
