@@ -1,14 +1,20 @@
 /* ============================================================
    Escala de Entrega — CD Nova Santa Rita
-   Tema claro · paleta Stok Center / Comercial Zaffari
+   Tema claro · paleta oficial Comercial Zaffari (marinho + laranja)
    ============================================================ */
 
 :root{
-  --red-700: #A50D19;
-  --red-600: #D4111F;
-  --red-500: #E8121F;
-  --red-100: #FCE4E5;
-  --red-50:  #FEF4F4;
+  --navy-800: #131C3D;
+  --navy-700: #1C2A57;
+  --navy-600: #223468;
+  --navy-500: #2B4180;
+  --navy-100: #E6E9F2;
+  --navy-50:  #F3F5FA;
+
+  --orange-600: #D98A1F;
+  --orange-500: #E89A2C;
+  --orange-100: #FBEBD2;
+  --orange-50:  #FDF6EA;
 
   --ink-900: #1C1D1F;
   --ink-700: #40424A;
@@ -19,10 +25,13 @@
   --line-strong: #C9C7C1;
   --paper: #FFFFFF;
   --paper-warm: #FBFAF8;
+
   --amber: #B8790A;
   --amber-bg: #FBF0DA;
   --green: #1E7B4D;
   --green-bg: #E4F4EA;
+  --danger: #B4232E;
+  --danger-bg: #F8E2E2;
 
   --font-ui: 'Inter', -apple-system, sans-serif;
   --font-mono: 'JetBrains Mono', monospace;
@@ -53,7 +62,7 @@ html,body{
   gap:28px;
   padding:18px 28px;
   background: var(--paper);
-  border-bottom: 3px solid var(--red-600);
+  border-bottom: 3px solid var(--navy-700);
   flex-wrap:wrap;
 }
 
@@ -64,20 +73,21 @@ html,body{
   font-weight:800;
   font-size:22px;
   letter-spacing:0.5px;
-  color: var(--red-600);
-  background: var(--red-50);
-  border: 2px solid var(--red-600);
+  color: var(--navy-700);
+  background: var(--navy-50);
+  border: 2px solid var(--navy-700);
   border-radius: 8px;
-  padding:8px 12px;
+  padding:8px 12px 6px;
   line-height:1;
   white-space:nowrap;
+  border-bottom: 4px solid var(--orange-500);
 }
 .brand-mark span{
   display:block;
   font-size:10px;
   font-weight:700;
   letter-spacing:2.5px;
-  color: var(--ink-700);
+  color: var(--orange-600);
   margin-top:3px;
 }
 
@@ -111,7 +121,7 @@ html,body{
   padding:6px 8px;
   background: var(--paper);
 }
-.date-field input:focus{ outline:none; border-color: var(--red-500); }
+.date-field input:focus{ outline:none; border-color: var(--orange-500); }
 
 .conn-status{ display:flex; align-items:center; gap:6px; font-size:12px; color: var(--ink-500); }
 .conn-status .dot{
@@ -119,7 +129,7 @@ html,body{
   background: var(--ink-300);
 }
 .conn-status.online .dot{ background: var(--green); }
-.conn-status.offline .dot{ background: var(--red-500); }
+.conn-status.offline .dot{ background: var(--danger); }
 
 .frotas{
   display:flex;
@@ -142,16 +152,16 @@ html,body{
 }
 .frota-row:last-child{ border-bottom:none; }
 .frota-row.frota-head{
-  background: var(--red-600);
+  background: var(--navy-700);
   color:#fff;
   font-weight:700;
   font-size:10.5px;
   letter-spacing:1px;
 }
 .frota-row.frota-total{
-  background: var(--red-50);
+  background: var(--orange-50);
   font-weight:700;
-  color: var(--red-700);
+  color: var(--orange-600);
 }
 .frota-count{ font-family: var(--font-mono); font-weight:700; }
 
@@ -183,12 +193,12 @@ html,body{
 }
 .btn:hover{ background: var(--paper-warm); }
 .btn-primary{
-  background: var(--red-600);
-  border-color: var(--red-600);
+  background: var(--navy-700);
+  border-color: var(--navy-700);
   color:#fff;
 }
-.btn-primary:hover{ background: var(--red-700); }
-.btn-danger-outline{ color: var(--red-600); border-color: var(--red-100); }
+.btn-primary:hover{ background: var(--navy-800); }
+.btn-danger-outline{ color: var(--danger); border-color: var(--danger-bg); }
 .btn-danger-outline:disabled{ opacity:.4; cursor:not-allowed; }
 
 #searchBox{
@@ -199,7 +209,7 @@ html,body{
   border:1.5px solid var(--line-strong);
   min-width:240px;
 }
-#searchBox:focus{ outline:none; border-color: var(--red-500); }
+#searchBox:focus{ outline:none; border-color: var(--orange-500); }
 
 .who-count{ font-size:12px; color: var(--ink-500); }
 
@@ -222,7 +232,7 @@ table.sheet thead th{
   position:sticky;
   top:0;
   z-index:5;
-  background: var(--ink-900);
+  background: var(--navy-800);
   color:#fff;
   font-size:11px;
   font-weight:700;
@@ -250,21 +260,21 @@ table.sheet td .cell{
   font-family: var(--font-ui);
 }
 table.sheet td .cell:focus{
-  outline:2px solid var(--red-500);
+  outline:2px solid var(--orange-500);
   outline-offset:-2px;
-  background: var(--red-50);
+  background: var(--orange-50);
 }
 
 table.sheet tbody tr:nth-child(odd) td{ background: var(--paper); }
 table.sheet tbody tr:nth-child(even) td{ background: var(--paper-warm); }
-table.sheet tbody tr:hover td{ background: #FBEDEE; }
+table.sheet tbody tr:hover td{ background: var(--navy-50); }
 
 .colcheck{ width:34px; text-align:center; }
 .row-check{ width:16px; height:16px; cursor:pointer; }
 
 /* linha de agrupamento (CARGAS DO PV X) */
 tr.group-row td{
-  background: var(--red-600) !important;
+  background: var(--navy-700) !important;
   color:#fff;
   font-weight:700;
   font-size:12.5px;
@@ -272,9 +282,11 @@ tr.group-row td{
   padding:8px 12px;
   text-align:center;
   text-transform:uppercase;
+  border-top: 2px solid var(--orange-500);
+  border-bottom: 2px solid var(--orange-500);
 }
 tr.group-row .cell{ color:#fff; text-align:center; font-weight:700; }
-tr.group-row .cell:focus{ background: var(--red-700); outline-color:#fff; }
+tr.group-row .cell:focus{ background: var(--navy-800); outline-color: var(--orange-500); }
 
 /* números */
 td.num .cell{ font-family: var(--font-mono); text-align:right; }
@@ -289,11 +301,11 @@ td.num .cell{ font-family: var(--font-mono); text-align:right; }
   letter-spacing:0.2px;
 }
 .tag-picking{ background: var(--amber-bg); color: var(--amber); }
-.tag-agrupada{ background: #E7E4FB; color:#5B4CC4; }
+.tag-agrupada{ background: var(--navy-100); color: var(--navy-600); }
 .tag-sorter{ background:#E1F0FA; color:#1268A6; }
-.tag-palete{ background:#EFEAF6; color:#6E4FA8; }
+.tag-palete{ background: var(--orange-100); color: var(--orange-600); }
 .tag-ok{ background: var(--green-bg); color: var(--green); }
-.tag-pendente{ background: var(--red-100); color: var(--red-700); }
+.tag-pendente{ background: var(--danger-bg); color: var(--danger); }
 
 select.cell{
   appearance:none;
@@ -316,8 +328,8 @@ select.cell{
   gap:8px;
 }
 #saveIndicator{ font-weight:700; color: var(--green); }
-#saveIndicator.saving{ color: var(--amber); }
-#saveIndicator.error{ color: var(--red-600); }
+#saveIndicator.saving{ color: var(--orange-600); }
+#saveIndicator.error{ color: var(--danger); }
 
 /* ================= RESPONSIVE ================= */
 @media (max-width: 900px){
