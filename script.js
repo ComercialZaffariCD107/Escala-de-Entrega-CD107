@@ -11,6 +11,7 @@ const COLS_ORDER = [
   "tipoVeiculo","frota","placaCavalo"
 ];
 const SELECT_FIELDS = new Set(["observacao","status","tipoVeiculo","frota"]);
+const EMPTY_MARKER = "__VAZIAS__";
 const OBSERVACAO_OPTS = ["", "PICKING", "AGRUPADA", "SORTER", "PALETE BOX"];
 const STATUS_OPTS = ["", "PENDENTE", "OK"];
 const TIPO_VEICULO_OPTS = ["", "RODOTREM", "SIDER", "CARRETA", "BITRUCK", "TRUCK"];
@@ -201,7 +202,7 @@ function focusGridCell(rowpos, colpos){
   if(rowpos < 0 || rowpos >= visibleRowIds.length) return false;
   if(colpos < 0 || colpos >= COLS_ORDER.length) return false;
   const el = sheetBody.querySelector(`[data-rowpos="${rowpos}"][data-colpos="${colpos}"]`);
-  if(el){ el.focus(); return true; }
+  if(el){ el.focus({preventScroll:true}); return true; }
   return false;
 }
 
@@ -335,7 +336,13 @@ function render(){
     }
     for(const f in columnFilters){
       const wanted = columnFilters[f];
-      if(wanted && String(row[f] ?? "") !== wanted) return;
+      if(!wanted) continue;
+      const cellVal = String(row[f] ?? "").trim();
+      if(wanted === EMPTY_MARKER){
+        if(cellVal !== "") return;
+      } else if(cellVal !== wanted){
+        return;
+      }
     }
 
     const rowpos = visibleRowIds.length;
@@ -380,7 +387,7 @@ function restoreFocus(){
   if(!focusedKey) return;
   const [id, field] = focusedKey.split(":");
   const el = sheetBody.querySelector(`[data-id="${id}"][data-field="${field}"]`);
-  if(el && document.activeElement !== el) el.focus();
+  if(el && document.activeElement !== el) el.focus({preventScroll:true});
 }
 
 function updateCounters(){
@@ -422,6 +429,12 @@ function buildFilterRow(){
     const optAll = document.createElement("option");
     optAll.value = ""; optAll.textContent = "Todos";
     sel.appendChild(optAll);
+
+    const optEmpty = document.createElement("option");
+    optEmpty.value = EMPTY_MARKER; optEmpty.textContent = "Vazias";
+    if(columnFilters[field] === EMPTY_MARKER) optEmpty.selected = true;
+    sel.appendChild(optEmpty);
+
     uniques.forEach(v=>{
       const op = document.createElement("option");
       op.value = v; op.textContent = v;
