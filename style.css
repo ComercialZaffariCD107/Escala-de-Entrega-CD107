@@ -234,6 +234,30 @@ html,body{
 #searchBox:focus{ outline:none; border-color: var(--orange-500); }
 
 .who-count{ font-size:12px; color: var(--ink-500); }
+.shortcut-hint{ font-size:11px; color: var(--ink-300); white-space:nowrap; }
+
+/* ================= FILTER ROW ================= */
+tr.filter-row{ background: var(--navy-50); }
+tr.filter-row.hidden{ display:none; }
+tr.filter-row th{
+  position:sticky;
+  top:37px;
+  z-index:4;
+  background: var(--navy-50);
+  border-right:1px solid var(--line);
+  padding:4px 6px;
+}
+select.col-filter{
+  width:100%;
+  font-family: var(--font-ui);
+  font-size:11px;
+  padding:4px 6px;
+  border-radius:4px;
+  border:1px solid var(--line-strong);
+  background: var(--paper);
+  color: var(--ink-700);
+}
+select.col-filter:focus{ outline:none; border-color: var(--orange-500); }
 
 /* ================= SHEET ================= */
 .sheet-wrap{
@@ -285,6 +309,11 @@ table.sheet td .cell:focus{
   outline:2px solid var(--orange-500);
   outline-offset:-2px;
   background: var(--orange-50);
+}
+table.sheet td .cell[data-editing="1"]{
+  outline:2px solid var(--navy-600);
+  background: var(--navy-50);
+  cursor:text;
 }
 
 table.sheet tbody tr:nth-child(odd) td{ background: var(--paper); }

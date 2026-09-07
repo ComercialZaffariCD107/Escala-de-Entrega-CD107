@@ -2,8 +2,15 @@
 // Escala de Entrega — CD Nova Santa Rita
 // Planilha colaborativa (Firestore) com fallback em modo local
 // (localStorage) enquanto o Firebase não estiver configurado.
+// Navegação por teclado no estilo Excel + filtros no cabeçalho.
 // ============================================================
 
+const COLS_ORDER = [
+  "loja","pav","lojaNome","tipoCarga","qtdPallet","doca","peso",
+  "observacao","master","cargasInformadas","status","liberacao",
+  "tipoVeiculo","frota","placaCavalo"
+];
+const SELECT_FIELDS = new Set(["observacao","status","tipoVeiculo","frota"]);
 const OBSERVACAO_OPTS = ["", "PICKING", "AGRUPADA", "SORTER", "PALETE BOX"];
 const STATUS_OPTS = ["", "PENDENTE", "OK"];
 const TIPO_VEICULO_OPTS = ["", "RODOTREM", "SIDER", "CARRETA", "BITRUCK", "TRUCK"];
@@ -12,10 +19,13 @@ const LOCAL_KEY = "escala_expedicao_local_v1";
 
 let rowsCache = [];
 let metaCache = { data: "" };
-let focusedKey = null;
+let focusedKey = null;      // "<rowId>:<field>" — usado p/ manter foco após re-render
 let selectedIds = new Set();
+let visibleRowIds = [];     // ids das linhas de dados visíveis, na ordem renderizada
+let columnFilters = {};     // { field: valorEscolhido }
 
 const sheetBody = document.getElementById("sheetBody");
+const filterRow = document.getElementById("filterRow");
 const saveIndicator = document.getElementById("saveIndicator");
 const connStatus = document.getElementById("connStatus");
 const connLabel = document.getElementById("connLabel");
@@ -23,7 +33,7 @@ const searchBox = document.getElementById("searchBox");
 const btnDeleteSelected = document.getElementById("btnDeleteSelected");
 
 // ------------------------------------------------------------
-// DADOS INICIAIS (PV 1) — usados no seed do Firestore e no modo local
+// DADOS INICIAIS (PV 1)
 // ------------------------------------------------------------
 function dadosIniciais(){
   const linha = (loja,qtd,doca,peso,obs,cargas) => ({
@@ -32,7 +42,6 @@ function dadosIniciais(){
     observacao: obs||"", master:"", cargasInformadas: cargas||"",
     status:"", liberacao:"", tipoVeiculo:"", frota:"", placaCavalo:""
   });
-
   return [
     {isGroup:true, groupLabel:"CARGAS DO PV 1"},
     linha(1,"","",1544,"AGRUPADA","AGRUPADA"),
@@ -66,17 +75,12 @@ let onMetaChanged = () => {};
 
 function uid(){ return "l" + Date.now().toString(36) + Math.random().toString(36).slice(2,8); }
 
-// ---------- MODO LOCAL (localStorage, sem Firebase) ----------
 function localLoad(){
-  try{
-    const raw = localStorage.getItem(LOCAL_KEY);
-    if(raw) return JSON.parse(raw);
-  }catch(e){ console.error(e); }
+  try{ const raw = localStorage.getItem(LOCAL_KEY); if(raw) return JSON.parse(raw); }
+  catch(e){ console.error(e); }
   return null;
 }
-function localSave(state){
-  localStorage.setItem(LOCAL_KEY, JSON.stringify(state));
-}
+function localSave(state){ localStorage.setItem(LOCAL_KEY, JSON.stringify(state)); }
 function localState(){
   let s = localLoad();
   if(!s){
@@ -89,10 +93,8 @@ function localState(){
 const localBackend = {
   init(){
     const s = localState();
-    rowsCache = s.rows;
-    metaCache = s.meta;
-    onRowsChanged(rowsCache);
-    onMetaChanged(metaCache);
+    rowsCache = s.rows; metaCache = s.meta;
+    onRowsChanged(rowsCache); onMetaChanged(metaCache);
     connStatus.className = "conn-status online";
     connLabel.textContent = "modo local · salvo neste navegador";
   },
@@ -116,8 +118,7 @@ const localBackend = {
     const s = localState();
     const row = s.rows.find(r=>r.id===id);
     if(row){ row[field] = value; localSave(s); rowsCache = s.rows; }
-    saveIndicator.textContent = "Tudo salvo";
-    saveIndicator.className = "";
+    saveIndicator.textContent = "Tudo salvo"; saveIndicator.className = "";
   },
   deleteRows(ids){
     const s = localState();
@@ -130,7 +131,6 @@ const localBackend = {
   }
 };
 
-// ---------- MODO FIRESTORE (colaborativo em tempo real) ----------
 const firestoreBackend = {
   async init(){
     try{
@@ -176,14 +176,12 @@ const firestoreBackend = {
     db.collection(COLLECTION_LINHAS).add({ isGroup:true, groupLabel:"NOVO GRUPO", ordem: maxOrdem + 1 });
   },
   commitField(id, field, value){
-    saveIndicator.textContent = "Salvando…";
-    saveIndicator.className = "saving";
+    saveIndicator.textContent = "Salvando…"; saveIndicator.className = "saving";
     db.collection(COLLECTION_LINHAS).doc(id).update({[field]: value})
       .then(()=>{ saveIndicator.textContent = "Tudo salvo"; saveIndicator.className = ""; })
       .catch(err=>{
         console.error("Erro ao salvar:", err);
-        saveIndicator.textContent = "Erro ao salvar";
-        saveIndicator.className = "error";
+        saveIndicator.textContent = "Erro ao salvar"; saveIndicator.className = "error";
       });
   },
   deleteRows(ids){
@@ -191,12 +189,83 @@ const firestoreBackend = {
     ids.forEach(id=> batch.delete(db.collection(COLLECTION_LINHAS).doc(id)));
     return batch.commit();
   },
-  setMetaDate(dateStr){
-    db.doc(DOC_META).set({data: dateStr}, {merge:true});
-  }
+  setMetaDate(dateStr){ db.doc(DOC_META).set({data: dateStr}, {merge:true}); }
 };
 
 const backend = isFirebaseConfigured ? firestoreBackend : localBackend;
+
+// ============================================================
+// NAVEGAÇÃO ESTILO EXCEL
+// ============================================================
+function focusGridCell(rowpos, colpos){
+  if(rowpos < 0 || rowpos >= visibleRowIds.length) return false;
+  if(colpos < 0 || colpos >= COLS_ORDER.length) return false;
+  const el = sheetBody.querySelector(`[data-rowpos="${rowpos}"][data-colpos="${colpos}"]`);
+  if(el){ el.focus(); return true; }
+  return false;
+}
+
+function attachGridNav(el){
+  el.addEventListener("keydown", (e)=>{
+    const editing = el.dataset.editing === "1";
+    const rp = parseInt(el.dataset.rowpos, 10);
+    const cp = parseInt(el.dataset.colpos, 10);
+
+    if(!editing && ["ArrowUp","ArrowDown","ArrowLeft","ArrowRight"].includes(e.key)){
+      e.preventDefault();
+      if(e.key === "ArrowUp") focusGridCell(rp-1, cp);
+      else if(e.key === "ArrowDown") focusGridCell(rp+1, cp);
+      else if(e.key === "ArrowLeft") focusGridCell(rp, cp-1);
+      else if(e.key === "ArrowRight") focusGridCell(rp, cp+1);
+      return;
+    }
+
+    if(el.tagName === "SELECT") return; // demais teclas: comportamento nativo do dropdown
+
+    if(e.key === "Enter"){
+      e.preventDefault();
+      if(!editing){
+        el.dataset.editing = "1";
+        el.contentEditable = "true";
+        el.focus();
+        document.execCommand && placeCaretAtEnd(el);
+      } else {
+        el.dataset.editing = "0";
+        el.contentEditable = "false";
+        backend.commitField(el.dataset.id, el.dataset.field, el.textContent.trim());
+        focusGridCell(rp+1, cp);
+      }
+      return;
+    }
+
+    if(e.key === "Escape" && editing){
+      e.preventDefault();
+      el.dataset.editing = "0";
+      el.contentEditable = "false";
+      el.textContent = el.dataset.original ?? "";
+      el.blur();
+    }
+  });
+
+  el.addEventListener("blur", ()=>{
+    focusedKey = null;
+    if(el.dataset.editing === "1"){
+      el.dataset.editing = "0";
+      el.contentEditable = "false";
+      backend.commitField(el.dataset.id, el.dataset.field, el.textContent.trim());
+    }
+  });
+  el.addEventListener("focus", ()=> focusedKey = el.dataset.id+":"+el.dataset.field);
+}
+
+function placeCaretAtEnd(el){
+  const range = document.createRange();
+  range.selectNodeContents(el);
+  range.collapse(false);
+  const sel = window.getSelection();
+  sel.removeAllRanges();
+  sel.addRange(range);
+}
 
 // ============================================================
 // RENDER
@@ -208,44 +277,44 @@ function fmtPeso(v){
   return n.toLocaleString("pt-BR");
 }
 
-function buildSelect(id, field, value, opts){
+function buildSelect(rowId, field, value, opts, rowpos, colpos){
   const sel = document.createElement("select");
   sel.className = "cell";
-  sel.dataset.id = id;
+  sel.dataset.id = rowId;
   sel.dataset.field = field;
+  sel.dataset.rowpos = rowpos;
+  sel.dataset.colpos = colpos;
   opts.forEach(o=>{
     const op = document.createElement("option");
     op.value = o; op.textContent = o || "—";
     if(o === (value||"")) op.selected = true;
     sel.appendChild(op);
   });
-  sel.addEventListener("change", ()=> backend.commitField(id, field, sel.value));
-  sel.addEventListener("focus", ()=> focusedKey = id+":"+field);
-  sel.addEventListener("blur", ()=> focusedKey = null);
+  sel.addEventListener("change", ()=> backend.commitField(rowId, field, sel.value));
+  attachGridNav(sel);
   return sel;
 }
 
-function buildEditable(id, field, value, opts={}){
+function buildEditable(rowId, field, value, rowpos, colpos, opts={}){
   const div = document.createElement("div");
   div.className = "cell";
-  div.contentEditable = "true";
-  div.dataset.id = id;
+  div.contentEditable = "false";
+  div.tabIndex = 0;
+  div.dataset.id = rowId;
   div.dataset.field = field;
-  div.textContent = opts.format ? opts.format(value) : (value ?? "");
-  div.addEventListener("focus", ()=> focusedKey = id+":"+field);
-  div.addEventListener("blur", ()=>{
-    focusedKey = null;
-    backend.commitField(id, field, div.textContent.trim());
-  });
-  div.addEventListener("keydown", (e)=>{
-    if(e.key === "Enter"){ e.preventDefault(); div.blur(); }
-  });
+  div.dataset.editing = "0";
+  if(rowpos !== undefined){ div.dataset.rowpos = rowpos; div.dataset.colpos = colpos; }
+  const text = opts.format ? opts.format(value) : (value ?? "");
+  div.textContent = text;
+  div.dataset.original = text;
+  attachGridNav(div);
   return div;
 }
 
 function render(){
   const filtro = searchBox.value.trim().toLowerCase();
   sheetBody.innerHTML = "";
+  visibleRowIds = [];
 
   rowsCache.forEach(row=>{
     if(row.isGroup){
@@ -264,6 +333,13 @@ function render(){
         .join(" ").toLowerCase();
       if(!haystack.includes(filtro)) return;
     }
+    for(const f in columnFilters){
+      const wanted = columnFilters[f];
+      if(wanted && String(row[f] ?? "") !== wanted) return;
+    }
+
+    const rowpos = visibleRowIds.length;
+    visibleRowIds.push(row.id);
 
     const tr = document.createElement("tr");
 
@@ -279,28 +355,19 @@ function render(){
     tdCheck.appendChild(chk);
     tr.appendChild(tdCheck);
 
-    const addCell = (el, extraClass="") => {
+    COLS_ORDER.forEach((field, colpos)=>{
       const td = document.createElement("td");
-      if(extraClass) td.className = extraClass;
+      if(["loja","qtdPallet","doca","peso"].includes(field)) td.className = "num";
+      let el;
+      if(field === "observacao") el = buildSelect(row.id,field,row[field],OBSERVACAO_OPTS,rowpos,colpos);
+      else if(field === "status") el = buildSelect(row.id,field,row[field],STATUS_OPTS,rowpos,colpos);
+      else if(field === "tipoVeiculo") el = buildSelect(row.id,field,row[field],TIPO_VEICULO_OPTS,rowpos,colpos);
+      else if(field === "frota") el = buildSelect(row.id,field,row[field],FROTA_OPTS,rowpos,colpos);
+      else if(field === "peso") el = buildEditable(row.id,field,row[field],rowpos,colpos,{format:fmtPeso});
+      else el = buildEditable(row.id,field,row[field],rowpos,colpos);
       td.appendChild(el);
       tr.appendChild(td);
-    };
-
-    addCell(buildEditable(row.id,"loja",row.loja), "num");
-    addCell(buildEditable(row.id,"pav",row.pav));
-    addCell(buildEditable(row.id,"lojaNome",row.lojaNome));
-    addCell(buildEditable(row.id,"tipoCarga",row.tipoCarga));
-    addCell(buildEditable(row.id,"qtdPallet",row.qtdPallet), "num");
-    addCell(buildEditable(row.id,"doca",row.doca), "num");
-    addCell(buildEditable(row.id,"peso",row.peso,{format:fmtPeso}), "num");
-    addCell(buildSelect(row.id,"observacao",row.observacao,OBSERVACAO_OPTS));
-    addCell(buildEditable(row.id,"master",row.master));
-    addCell(buildEditable(row.id,"cargasInformadas",row.cargasInformadas));
-    addCell(buildSelect(row.id,"status",row.status,STATUS_OPTS));
-    addCell(buildEditable(row.id,"liberacao",row.liberacao));
-    addCell(buildSelect(row.id,"tipoVeiculo",row.tipoVeiculo,TIPO_VEICULO_OPTS));
-    addCell(buildSelect(row.id,"frota",row.frota,FROTA_OPTS));
-    addCell(buildEditable(row.id,"placaCavalo",row.placaCavalo));
+    });
 
     sheetBody.appendChild(tr);
   });
@@ -327,7 +394,6 @@ function updateCounters(){
   };
   const veiculo = countBy("tipoVeiculo");
   const frota = countBy("frota");
-
   let totalP = 0, totalT = 0;
   document.querySelectorAll(".frota-row[data-key]").forEach(row=>{
     const key = row.dataset.key;
@@ -341,9 +407,48 @@ function updateCounters(){
 }
 
 // ============================================================
+// LINHA DE FILTROS (Ctrl+Shift+L)
+// ============================================================
+function buildFilterRow(){
+  filterRow.innerHTML = "";
+  const thCheck = document.createElement("th");
+  filterRow.appendChild(thCheck);
+
+  COLS_ORDER.forEach(field=>{
+    const th = document.createElement("th");
+    const uniques = [...new Set(rowsCache.filter(r=>!r.isGroup).map(r=> String(r[field] ?? "")).filter(v=>v!==""))].sort();
+    const sel = document.createElement("select");
+    sel.className = "col-filter";
+    const optAll = document.createElement("option");
+    optAll.value = ""; optAll.textContent = "Todos";
+    sel.appendChild(optAll);
+    uniques.forEach(v=>{
+      const op = document.createElement("option");
+      op.value = v; op.textContent = v;
+      if(columnFilters[field] === v) op.selected = true;
+      sel.appendChild(op);
+    });
+    sel.addEventListener("change", ()=>{
+      if(sel.value) columnFilters[field] = sel.value; else delete columnFilters[field];
+      render();
+    });
+    th.appendChild(sel);
+    filterRow.appendChild(th);
+  });
+}
+
+document.addEventListener("keydown", (e)=>{
+  if(e.ctrlKey && e.shiftKey && e.key.toLowerCase() === "l"){
+    e.preventDefault();
+    filterRow.classList.toggle("hidden");
+    if(!filterRow.classList.contains("hidden")) buildFilterRow();
+  }
+});
+
+// ============================================================
 // INIT
 // ============================================================
-onRowsChanged = (rows) => { rowsCache = rows; render(); };
+onRowsChanged = (rows) => { rowsCache = rows; render(); if(!filterRow.classList.contains("hidden")) buildFilterRow(); };
 onMetaChanged = (meta) => {
   const input = document.getElementById("dataEntrega");
   if(meta && meta.data && document.activeElement !== input) input.value = meta.data;

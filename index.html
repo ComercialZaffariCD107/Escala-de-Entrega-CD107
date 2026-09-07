@@ -6,7 +6,7 @@
 <title>Escala de Expedição · CD Nova Santa Rita</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=3">
+<link rel="stylesheet" href="style.css?v=4">
 </head>
 <body>
 
@@ -71,6 +71,7 @@
     </div>
     <div class="toolbar-right">
       <input type="text" id="searchBox" placeholder="Buscar loja, master, carga…">
+      <span class="shortcut-hint">Ctrl+Shift+L: filtros no cabeçalho</span>
       <span class="who-count" id="whoCount"></span>
     </div>
   </div>
@@ -97,7 +98,9 @@
           <th class="col-frota">FROTA</th>
           <th class="col-placa">PLACA CAVALO</th>
         </tr>
+        <tr id="filterRow" class="filter-row hidden"></tr>
       </thead>
+
       <tbody id="sheetBody">
         <!-- gerado via script.js -->
       </tbody>
@@ -114,7 +117,7 @@
 
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
-<script src="firebase-config.js?v=3"></script>
-<script src="script.js?v=3"></script>
+<script src="firebase-config.js?v=4"></script>
+<script src="script.js?v=4"></script>
 </body>
 </html>
