@@ -6,7 +6,7 @@
 <title>Escala de Expedição · CD Nova Santa Rita</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=1">
+<link rel="stylesheet" href="style.css?v=3">
 </head>
 <body>
 
@@ -14,44 +14,51 @@
 
   <!-- ===== TOPO ===== -->
   <header class="topbar">
-    <div class="brand">
-      <div class="brand-mark">STOK<span>CENTER</span></div>
-      <div class="brand-sub">
-        <h1>Escala de Entrega</h1>
-        <p>CD Nova Santa Rita</p>
-      </div>
-    </div>
+    <div class="topbar-row">
 
-    <div class="topbar-mid">
-      <label class="date-field">
-        <span>Data de entrega</span>
-        <input type="date" id="dataEntrega">
-      </label>
-      <div class="conn-status" id="connStatus">
-        <span class="dot"></span>
-        <span id="connLabel">conectando…</span>
+      <div class="brand">
+        <div class="brand-mark">STOK<span>CENTER</span></div>
+        <div class="brand-sub">
+          <h1>Escala de Entrega</h1>
+          <p>CD Nova Santa Rita</p>
+        </div>
       </div>
-    </div>
 
-    <div class="frotas">
-      <div class="frota-col">
-        <div class="frota-row frota-head"><span>PRÓPRIA</span><span></span></div>
-        <div class="frota-row" data-key="RODOTREM"><span>Rodotrem</span><span class="frota-count">0</span></div>
-        <div class="frota-row" data-key="SIDER"><span>Sider</span><span class="frota-count">0</span></div>
-        <div class="frota-row" data-key="CARRETA"><span>Carreta</span><span class="frota-count">0</span></div>
-        <div class="frota-row" data-key="BITRUCK"><span>Bitruck</span><span class="frota-count">0</span></div>
-        <div class="frota-row" data-key="TRUCK"><span>Truck</span><span class="frota-count">0</span></div>
-        <div class="frota-row frota-total"><span>Total</span><span class="frota-count" id="totalPropria">0</span></div>
+      <div class="topbar-status">
+        <label class="date-field">
+          <span>Data de entrega</span>
+          <input type="date" id="dataEntrega">
+        </label>
+        <div class="conn-status" id="connStatus">
+          <span class="dot"></span>
+          <span id="connLabel">conectando…</span>
+        </div>
       </div>
-      <div class="frota-col">
-        <div class="frota-row frota-head"><span>TERCEIRO</span><span></span></div>
-        <div class="frota-row" data-key="TRANSPIO"><span>Transpio</span><span class="frota-count">0</span></div>
-        <div class="frota-row" data-key="DARCHEL"><span>Darchel</span><span class="frota-count">0</span></div>
-        <div class="frota-row" data-key="TSG"><span>TSG</span><span class="frota-count">0</span></div>
-        <div class="frota-row" data-key="CATTO"><span>Catto</span><span class="frota-count">0</span></div>
-        <div class="frota-row" data-key="G10"><span>G10</span><span class="frota-count">0</span></div>
-        <div class="frota-row frota-total"><span>Total</span><span class="frota-count" id="totalTerceiro">0</span></div>
+
+      <div class="frotas-card">
+        <div class="frotas-card-title">Frota do dia</div>
+        <div class="frotas-grid">
+          <div class="frota-col">
+            <div class="frota-col-head">Própria</div>
+            <div class="frota-row" data-key="RODOTREM"><span>Rodotrem</span><span class="frota-count">0</span></div>
+            <div class="frota-row" data-key="SIDER"><span>Sider</span><span class="frota-count">0</span></div>
+            <div class="frota-row" data-key="CARRETA"><span>Carreta</span><span class="frota-count">0</span></div>
+            <div class="frota-row" data-key="BITRUCK"><span>Bitruck</span><span class="frota-count">0</span></div>
+            <div class="frota-row" data-key="TRUCK"><span>Truck</span><span class="frota-count">0</span></div>
+            <div class="frota-row frota-total"><span>Total</span><span class="frota-count" id="totalPropria">0</span></div>
+          </div>
+          <div class="frota-col">
+            <div class="frota-col-head">Terceiro</div>
+            <div class="frota-row" data-key="TRANSPIO"><span>Transpio</span><span class="frota-count">0</span></div>
+            <div class="frota-row" data-key="DARCHEL"><span>Darchel</span><span class="frota-count">0</span></div>
+            <div class="frota-row" data-key="TSG"><span>TSG</span><span class="frota-count">0</span></div>
+            <div class="frota-row" data-key="CATTO"><span>Catto</span><span class="frota-count">0</span></div>
+            <div class="frota-row" data-key="G10"><span>G10</span><span class="frota-count">0</span></div>
+            <div class="frota-row frota-total"><span>Total</span><span class="frota-count" id="totalTerceiro">0</span></div>
+          </div>
+        </div>
       </div>
+
     </div>
   </header>
 
@@ -60,7 +67,7 @@
     <div class="toolbar-left">
       <button class="btn btn-primary" id="btnAddRow">+ Linha</button>
       <button class="btn" id="btnAddGroup">+ Grupo PV</button>
-      <button class="btn btn-danger-outline" id="btnDeleteSelected" disabled>Excluir linha</button>
+      <button class="btn btn-danger-outline" id="btnDeleteSelected">Excluir linha</button>
     </div>
     <div class="toolbar-right">
       <input type="text" id="searchBox" placeholder="Buscar loja, master, carga…">
@@ -107,7 +114,7 @@
 
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
-<script src="firebase-config.js?v=1"></script>
-<script src="script.js?v=1"></script>
+<script src="firebase-config.js?v=3"></script>
+<script src="script.js?v=3"></script>
 </body>
 </html>

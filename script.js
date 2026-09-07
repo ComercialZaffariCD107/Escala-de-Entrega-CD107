@@ -275,7 +275,6 @@ function render(){
     chk.checked = selectedIds.has(row.id);
     chk.addEventListener("change", ()=>{
       if(chk.checked) selectedIds.add(row.id); else selectedIds.delete(row.id);
-      btnDeleteSelected.disabled = selectedIds.size === 0;
     });
     tdCheck.appendChild(chk);
     tr.appendChild(tdCheck);
@@ -353,11 +352,13 @@ onMetaChanged = (meta) => {
 document.getElementById("btnAddRow").addEventListener("click", ()=> backend.addRow());
 document.getElementById("btnAddGroup").addEventListener("click", ()=> backend.addGroup());
 document.getElementById("btnDeleteSelected").addEventListener("click", ()=>{
-  if(selectedIds.size === 0) return;
+  if(selectedIds.size === 0){
+    alert("Marque a caixinha da linha (ou linhas) que deseja excluir e clique em \"Excluir linha\" de novo.");
+    return;
+  }
   if(!confirm(`Excluir ${selectedIds.size} linha(s) selecionada(s)?`)) return;
   backend.deleteRows(selectedIds);
   selectedIds.clear();
-  btnDeleteSelected.disabled = true;
 });
 searchBox.addEventListener("input", render);
 document.getElementById("dataEntrega").addEventListener("change", (e)=> backend.setMetaDate(e.target.value));
