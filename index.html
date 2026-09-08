@@ -6,7 +6,7 @@
 <title>Escala de Expedição · CD Nova Santa Rita</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=6">
+<link rel="stylesheet" href="style.css?v=7">
 </head>
 <body>
 
@@ -25,10 +25,10 @@
       </div>
 
       <div class="topbar-status">
-        <label class="date-field">
-          <span>Data de entrega</span>
-          <input type="date" id="dataEntrega">
-        </label>
+        <div class="active-dia-field">
+          <span>Editando</span>
+          <strong id="activeDiaLabel">—</strong>
+        </div>
         <div class="conn-status" id="connStatus">
           <span class="dot"></span>
           <span id="connLabel">conectando…</span>
@@ -110,6 +110,22 @@
     </table>
   </div>
 
+  <!-- ===== ABAS DE DIAS (estilo planilha) ===== -->
+  <div class="day-tabs-wrap">
+    <div class="day-tabs" id="dayTabs">
+      <!-- gerado via script.js -->
+    </div>
+    <div class="day-tab-add-wrap">
+      <button class="day-tab-add" id="btnAddDia" title="Adicionar dia">+</button>
+      <div class="day-tab-popover hidden" id="diaPopover">
+        <label>Nova data
+          <input type="date" id="novoDiaInput">
+        </label>
+        <button class="btn btn-primary" id="confirmarNovoDia">Adicionar aba</button>
+      </div>
+    </div>
+  </div>
+
   <footer class="footbar">
     <span id="saveIndicator">Tudo salvo</span>
     <span class="footbar-sep">·</span>
@@ -120,7 +136,7 @@
 
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
-<script src="firebase-config.js?v=6"></script>
-<script src="script.js?v=6"></script>
+<script src="firebase-config.js?v=7"></script>
+<script src="script.js?v=7"></script>
 </body>
 </html>

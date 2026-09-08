@@ -18,9 +18,13 @@ const STATUS_OPTS = ["", "PENDENTE", "OK"];
 const TIPO_VEICULO_OPTS = ["", "RODOTREM", "SIDER", "CARRETA", "BITRUCK", "TRUCK"];
 const FROTA_OPTS = ["", "TRANSPIO", "DARCHEL", "TSG", "CATTO", "G10"];
 const LOCAL_KEY = "escala_expedicao_local_v1";
+const DIA_PADRAO = "2026-09-01";
+const ACTIVE_DIA_KEY = "escala_expedicao_active_dia";
 
 let rowsCache = [];
-let metaCache = { data: "" };
+let metaCache = { dias: [DIA_PADRAO] };
+let diasCache = [DIA_PADRAO];
+let activeDia = localStorage.getItem(ACTIVE_DIA_KEY) || DIA_PADRAO;
 let focusedKey = null;
 let selectedIds = new Set();      // linhas marcadas p/ excluir (checkbox)
 let visibleRowIds = [];           // ids das linhas de dados visíveis, na ordem renderizada
@@ -36,6 +40,18 @@ const connStatus = document.getElementById("connStatus");
 const connLabel = document.getElementById("connLabel");
 const searchBox = document.getElementById("searchBox");
 const btnDeleteSelected = document.getElementById("btnDeleteSelected");
+const dayTabsEl = document.getElementById("dayTabs");
+const activeDiaLabel = document.getElementById("activeDiaLabel");
+
+// dia efetivo de uma linha (linhas antigas, salvas antes das abas
+// existirem, não têm o campo "dia" — tratamos como DIA_PADRAO)
+function diaDe(row){ return row.dia || DIA_PADRAO; }
+
+function fmtDiaLabel(iso){
+  const partes = String(iso).split("-");
+  if(partes.length !== 3) return iso;
+  return `${partes[2]}.${partes[1]}`;
+}
 
 // ------------------------------------------------------------
 // DADOS INICIAIS (PV 1)
@@ -46,10 +62,10 @@ function dadosIniciais(){
     tipoCarga:"MERCEARIA", qtdPallet: qtd||"", doca: doca||"", peso: peso||"",
     observacao: obs||"", master:"", cargasInformadas: cargas||"",
     status:"", liberacao:"", tipoVeiculo:"", frota:"",
-    nPedido:"", rateio:"", placaCavalo:"", motorista:""
+    nPedido:"", rateio:"", placaCavalo:"", motorista:"", dia: DIA_PADRAO
   });
   return [
-    {isGroup:true, groupLabel:"CARGAS DO PV 1"},
+    {isGroup:true, groupLabel:"CARGAS DO PV 1", dia: DIA_PADRAO},
     linha(1,"","",1544,"AGRUPADA","AGRUPADA"),
     linha(1,"","",1103,"SORTER","SORTER"),
     linha(1,1,55,600,"PICKING","1600378"),
@@ -90,9 +106,11 @@ function localSave(state){ localStorage.setItem(LOCAL_KEY, JSON.stringify(state)
 function localState(){
   let s = localLoad();
   if(!s){
-    s = { rows: dadosIniciais().map(r=>({...r, id: uid()})), meta: { data: "2026-07-01" } };
+    s = { rows: dadosIniciais().map(r=>({...r, id: uid()})), meta: { dias: [DIA_PADRAO] } };
     localSave(s);
   }
+  if(!s.meta) s.meta = { dias: [DIA_PADRAO] };
+  if(!Array.isArray(s.meta.dias) || !s.meta.dias.length) s.meta.dias = [DIA_PADRAO];
   return s;
 }
 
@@ -110,14 +128,15 @@ const localBackend = {
     s.rows.push({
       id: uid(), loja:"", pav:"", lojaNome:"", tipoCarga:"", qtdPallet:"", doca:"", peso:"",
       observacao:"", master:"", cargasInformadas:"", status:"", liberacao:"",
-      tipoVeiculo:"", frota:"", nPedido:"", rateio:"", placaCavalo:"", motorista:"", ordem: maxOrdem + 1
+      tipoVeiculo:"", frota:"", nPedido:"", rateio:"", placaCavalo:"", motorista:"",
+      dia: activeDia, ordem: maxOrdem + 1
     });
     localSave(s); rowsCache = s.rows; onRowsChanged(rowsCache);
   },
   addGroup(){
     const s = localState();
     const maxOrdem = s.rows.reduce((m,r)=>Math.max(m, r.ordem||0), 0);
-    s.rows.push({ id: uid(), isGroup:true, groupLabel:"NOVO GRUPO", ordem: maxOrdem + 1 });
+    s.rows.push({ id: uid(), isGroup:true, groupLabel:"NOVO GRUPO", dia: activeDia, ordem: maxOrdem + 1 });
     localSave(s); rowsCache = s.rows; onRowsChanged(rowsCache);
   },
   commitField(id, field, value){
@@ -131,9 +150,20 @@ const localBackend = {
     s.rows = s.rows.filter(r=> !ids.has(r.id));
     localSave(s); rowsCache = s.rows; onRowsChanged(rowsCache);
   },
-  setMetaDate(dateStr){
+  addDia(dateStr){
     const s = localState();
-    s.meta.data = dateStr; localSave(s); metaCache = s.meta;
+    if(!s.meta.dias.includes(dateStr)) s.meta.dias.push(dateStr);
+    s.meta.dias.sort();
+    localSave(s); metaCache = s.meta; onMetaChanged(metaCache);
+    setActiveDia(dateStr);
+  },
+  removeDia(dateStr){
+    const s = localState();
+    s.meta.dias = s.meta.dias.filter(d=> d!==dateStr);
+    if(!s.meta.dias.length) s.meta.dias = [DIA_PADRAO];
+    s.rows = s.rows.filter(r=> diaDe(r) !== dateStr);
+    localSave(s); rowsCache = s.rows; metaCache = s.meta;
+    onRowsChanged(rowsCache); onMetaChanged(metaCache);
   }
 };
 
@@ -147,7 +177,7 @@ const firestoreBackend = {
           const ref = db.collection(COLLECTION_LINHAS).doc();
           batch.set(ref, d);
         });
-        batch.set(db.doc(DOC_META), { data: "2026-07-01" }, {merge:true});
+        batch.set(db.doc(DOC_META), { dias: [DIA_PADRAO] }, {merge:true});
         await batch.commit();
       }
     }catch(e){ console.error("Erro ao semear dados:", e); }
@@ -166,7 +196,10 @@ const firestoreBackend = {
 
     db.doc(DOC_META).onSnapshot(snap=>{
       const data = snap.data();
-      if(data){ metaCache = data; onMetaChanged(metaCache); }
+      if(data){
+        if(!Array.isArray(data.dias) || !data.dias.length) data.dias = [DIA_PADRAO];
+        metaCache = data; onMetaChanged(metaCache);
+      }
     });
   },
   addRow(){
@@ -174,12 +207,13 @@ const firestoreBackend = {
     db.collection(COLLECTION_LINHAS).add({
       loja:"", pav:"", lojaNome:"", tipoCarga:"", qtdPallet:"", doca:"", peso:"",
       observacao:"", master:"", cargasInformadas:"", status:"", liberacao:"",
-      tipoVeiculo:"", frota:"", nPedido:"", rateio:"", placaCavalo:"", motorista:"", ordem: maxOrdem + 1
+      tipoVeiculo:"", frota:"", nPedido:"", rateio:"", placaCavalo:"", motorista:"",
+      dia: activeDia, ordem: maxOrdem + 1
     });
   },
   addGroup(){
     const maxOrdem = rowsCache.reduce((m,r)=>Math.max(m, r.ordem||0), 0);
-    db.collection(COLLECTION_LINHAS).add({ isGroup:true, groupLabel:"NOVO GRUPO", ordem: maxOrdem + 1 });
+    db.collection(COLLECTION_LINHAS).add({ isGroup:true, groupLabel:"NOVO GRUPO", dia: activeDia, ordem: maxOrdem + 1 });
   },
   commitField(id, field, value){
     saveIndicator.textContent = "Salvando…"; saveIndicator.className = "saving";
@@ -195,7 +229,23 @@ const firestoreBackend = {
     ids.forEach(id=> batch.delete(db.collection(COLLECTION_LINHAS).doc(id)));
     return batch.commit();
   },
-  setMetaDate(dateStr){ db.doc(DOC_META).set({data: dateStr}, {merge:true}); }
+  async addDia(dateStr){
+    const dias = Array.isArray(metaCache.dias) ? [...metaCache.dias] : [DIA_PADRAO];
+    if(!dias.includes(dateStr)) dias.push(dateStr);
+    dias.sort();
+    await db.doc(DOC_META).set({ dias }, {merge:true});
+    setActiveDia(dateStr);
+  },
+  async removeDia(dateStr){
+    const dias = (Array.isArray(metaCache.dias) ? metaCache.dias : [DIA_PADRAO])
+      .filter(d=> d!==dateStr);
+    const batch = db.batch();
+    batch.set(db.doc(DOC_META), { dias: dias.length ? dias : [DIA_PADRAO] }, {merge:true});
+    rowsCache.filter(r=> diaDe(r) === dateStr).forEach(r=>{
+      batch.delete(db.collection(COLLECTION_LINHAS).doc(r.id));
+    });
+    await batch.commit();
+  }
 };
 
 const backend = isFirebaseConfigured ? firestoreBackend : localBackend;
@@ -509,6 +559,8 @@ function render(){
   visibleRowIds = [];
 
   rowsCache.forEach(row=>{
+    if(diaDe(row) !== activeDia) return;
+
     if(row.isGroup){
       const tr = document.createElement("tr");
       tr.className = "group-row";
@@ -580,9 +632,10 @@ function restoreFocus(){
 }
 
 function updateCounters(){
+  const rowsDoDia = rowsCache.filter(r=> diaDe(r) === activeDia);
   const countBy = (field) => {
     const map = {};
-    rowsCache.forEach(r=>{
+    rowsDoDia.forEach(r=>{
       if(r.isGroup || !r[field]) return;
       map[r[field]] = (map[r[field]]||0) + 1;
     });
@@ -611,7 +664,7 @@ function buildFilterRow(){
 
   COLS_ORDER.forEach(field=>{
     const th = document.createElement("th");
-    const uniques = [...new Set(rowsCache.filter(r=>!r.isGroup).map(r=> String(r[field] ?? "")).filter(v=>v!==""))].sort();
+    const uniques = [...new Set(rowsCache.filter(r=>!r.isGroup && diaDe(r)===activeDia).map(r=> String(r[field] ?? "")).filter(v=>v!==""))].sort();
     const sel = document.createElement("select");
     sel.className = "col-filter";
 
@@ -648,12 +701,98 @@ document.addEventListener("keydown", (e)=>{
 });
 
 // ============================================================
+// ABAS DE DIAS
+// ============================================================
+function computeDias(){
+  const set = new Set(Array.isArray(metaCache.dias) ? metaCache.dias : []);
+  rowsCache.forEach(r=> set.add(diaDe(r)));
+  if(!set.size) set.add(DIA_PADRAO);
+  diasCache = [...set].sort();
+}
+
+function setActiveDia(dateStr){
+  activeDia = dateStr;
+  localStorage.setItem(ACTIVE_DIA_KEY, activeDia);
+  renderDayTabs();
+  render();
+  if(!filterRow.classList.contains("hidden")) buildFilterRow();
+}
+
+function renderDayTabs(){
+  if(!diasCache.includes(activeDia)) activeDia = diasCache[0];
+  activeDiaLabel.textContent = fmtDiaLabel(activeDia);
+
+  dayTabsEl.innerHTML = "";
+  diasCache.forEach(dia=>{
+    const btn = document.createElement("button");
+    btn.className = "day-tab" + (dia === activeDia ? " active" : "");
+    btn.title = dia;
+
+    const label = document.createElement("span");
+    label.textContent = fmtDiaLabel(dia);
+    btn.appendChild(label);
+
+    const remove = document.createElement("span");
+    remove.className = "day-tab-remove";
+    remove.textContent = "×";
+    remove.title = "Excluir esta aba";
+    remove.addEventListener("click", (ev)=>{
+      ev.stopPropagation();
+      if(diasCache.length <= 1){
+        alert("Precisa sobrar pelo menos uma aba.");
+        return;
+      }
+      if(!confirm(`Excluir a aba ${fmtDiaLabel(dia)}? As linhas dela também serão apagadas.`)) return;
+      backend.removeDia(dia);
+    });
+    btn.appendChild(remove);
+
+    btn.addEventListener("click", ()=> setActiveDia(dia));
+    dayTabsEl.appendChild(btn);
+  });
+}
+
+const btnAddDia = document.getElementById("btnAddDia");
+const diaPopover = document.getElementById("diaPopover");
+const novoDiaInput = document.getElementById("novoDiaInput");
+
+btnAddDia.addEventListener("click", (ev)=>{
+  ev.stopPropagation();
+  diaPopover.classList.toggle("hidden");
+  if(!diaPopover.classList.contains("hidden")){
+    // sugere o dia seguinte ao último já cadastrado
+    const ultimo = diasCache[diasCache.length - 1];
+    const prox = new Date(ultimo + "T00:00:00");
+    prox.setDate(prox.getDate() + 1);
+    novoDiaInput.value = prox.toISOString().slice(0,10);
+    novoDiaInput.focus();
+  }
+});
+document.getElementById("confirmarNovoDia").addEventListener("click", ()=>{
+  const val = novoDiaInput.value;
+  if(!val) return;
+  diaPopover.classList.add("hidden");
+  backend.addDia(val);
+});
+document.addEventListener("click", (ev)=>{
+  if(!diaPopover.contains(ev.target) && ev.target !== btnAddDia){
+    diaPopover.classList.add("hidden");
+  }
+});
+
+// ============================================================
 // INIT
 // ============================================================
-onRowsChanged = (rows) => { rowsCache = rows; render(); if(!filterRow.classList.contains("hidden")) buildFilterRow(); };
+onRowsChanged = (rows) => {
+  rowsCache = rows;
+  computeDias();
+  renderDayTabs();
+  render();
+  if(!filterRow.classList.contains("hidden")) buildFilterRow();
+};
 onMetaChanged = (meta) => {
-  const input = document.getElementById("dataEntrega");
-  if(meta && meta.data && document.activeElement !== input) input.value = meta.data;
+  computeDias();
+  renderDayTabs();
 };
 
 document.getElementById("btnAddRow").addEventListener("click", ()=> backend.addRow());
@@ -668,6 +807,5 @@ document.getElementById("btnDeleteSelected").addEventListener("click", ()=>{
   selectedIds.clear();
 });
 searchBox.addEventListener("input", render);
-document.getElementById("dataEntrega").addEventListener("change", (e)=> backend.setMetaDate(e.target.value));
 
 backend.init();
