@@ -53,6 +53,9 @@ html,body{
   display:flex;
   flex-direction:column;
   min-height:100vh;
+  max-width:1900px;
+  width:100%;
+  margin:0 auto;
 }
 
 /* ================= TOPBAR ================= */
@@ -66,6 +69,7 @@ html,body{
 .topbar-row{
   display:flex;
   align-items:center;
+  justify-content:center;
   gap:36px;
   flex-wrap:wrap;
 }
@@ -136,7 +140,6 @@ html,body{
 .conn-status.offline .dot{ background: var(--danger); }
 
 .frotas-card{
-  margin-left:auto;
   border:1px solid var(--line);
   border-radius:10px;
   overflow:hidden;
