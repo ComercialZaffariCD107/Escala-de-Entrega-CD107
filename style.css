@@ -269,7 +269,7 @@ select.col-filter:focus{ outline:none; border-color: var(--orange-500); }
 table.sheet{
   border-collapse:collapse;
   width:100%;
-  min-width:1500px;
+  min-width:1780px;
   background: var(--paper);
   font-size:13px;
 }

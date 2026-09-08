@@ -9,7 +9,7 @@
 const COLS_ORDER = [
   "loja","pav","lojaNome","tipoCarga","qtdPallet","doca","peso",
   "observacao","master","cargasInformadas","status","liberacao",
-  "tipoVeiculo","frota","placaCavalo"
+  "tipoVeiculo","frota","nPedido","rateio","placaCavalo","motorista"
 ];
 const SELECT_FIELDS = new Set(["observacao","status","tipoVeiculo","frota"]);
 const EMPTY_MARKER = "__VAZIAS__";
@@ -45,7 +45,8 @@ function dadosIniciais(){
     loja: String(loja), pav:"PV1", lojaNome:`Loja ${String(loja).padStart(2,"0")} - Passo Fundo`,
     tipoCarga:"MERCEARIA", qtdPallet: qtd||"", doca: doca||"", peso: peso||"",
     observacao: obs||"", master:"", cargasInformadas: cargas||"",
-    status:"", liberacao:"", tipoVeiculo:"", frota:"", placaCavalo:""
+    status:"", liberacao:"", tipoVeiculo:"", frota:"",
+    nPedido:"", rateio:"", placaCavalo:"", motorista:""
   });
   return [
     {isGroup:true, groupLabel:"CARGAS DO PV 1"},
@@ -109,7 +110,7 @@ const localBackend = {
     s.rows.push({
       id: uid(), loja:"", pav:"", lojaNome:"", tipoCarga:"", qtdPallet:"", doca:"", peso:"",
       observacao:"", master:"", cargasInformadas:"", status:"", liberacao:"",
-      tipoVeiculo:"", frota:"", placaCavalo:"", ordem: maxOrdem + 1
+      tipoVeiculo:"", frota:"", nPedido:"", rateio:"", placaCavalo:"", motorista:"", ordem: maxOrdem + 1
     });
     localSave(s); rowsCache = s.rows; onRowsChanged(rowsCache);
   },
@@ -173,7 +174,7 @@ const firestoreBackend = {
     db.collection(COLLECTION_LINHAS).add({
       loja:"", pav:"", lojaNome:"", tipoCarga:"", qtdPallet:"", doca:"", peso:"",
       observacao:"", master:"", cargasInformadas:"", status:"", liberacao:"",
-      tipoVeiculo:"", frota:"", placaCavalo:"", ordem: maxOrdem + 1
+      tipoVeiculo:"", frota:"", nPedido:"", rateio:"", placaCavalo:"", motorista:"", ordem: maxOrdem + 1
     });
   },
   addGroup(){
@@ -512,7 +513,7 @@ function render(){
       const tr = document.createElement("tr");
       tr.className = "group-row";
       const td = document.createElement("td");
-      td.colSpan = 16;
+      td.colSpan = 19;
       td.appendChild(buildEditable(row.id, "groupLabel", row.groupLabel));
       tr.appendChild(td);
       sheetBody.appendChild(tr);
@@ -520,7 +521,7 @@ function render(){
     }
 
     if(filtro){
-      const haystack = [row.lojaNome,row.master,row.cargasInformadas,row.observacao,row.placaCavalo]
+      const haystack = [row.lojaNome,row.master,row.cargasInformadas,row.observacao,row.placaCavalo,row.motorista,row.nPedido]
         .join(" ").toLowerCase();
       if(!haystack.includes(filtro)) return;
     }
@@ -551,7 +552,7 @@ function render(){
 
     COLS_ORDER.forEach((field, colpos)=>{
       const td = document.createElement("td");
-      if(["loja","qtdPallet","doca","peso"].includes(field)) td.className = "num";
+      if(["loja","qtdPallet","doca","peso","nPedido","rateio"].includes(field)) td.className = "num";
       let el;
       if(field === "observacao") el = buildSelect(row.id,field,row[field],OBSERVACAO_OPTS,rowpos,colpos);
       else if(field === "status") el = buildSelect(row.id,field,row[field],STATUS_OPTS,rowpos,colpos);
